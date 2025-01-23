@@ -159,6 +159,7 @@ def eval_admet(
         if k in logscale_endpts:
             # already log10scaled
             mae = mean_absolute_error(ref, pred)
+            r2 = r2_score(ref, pred)
         else:
             # clip to a detection limit
             epsilon = 1e-8
