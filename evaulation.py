@@ -49,7 +49,7 @@ def eval_poses(
     for pred, ref in zip(preds, refs):
         mol_has_3D(pred)
         mol_has_3D(ref)
-        if pred.GetNumAtoms() != ref.GetNumAtoms():
+        if pred.GetNumHeavyAtoms() != ref.GetNumHeavyAtoms():
             raise ValueError("mismatched number of atoms")
         pred_spy = Molecule.from_rdkit(pred)
         ref_spy = Molecule.from_rdkit(ref)
