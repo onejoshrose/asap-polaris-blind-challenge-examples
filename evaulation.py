@@ -60,9 +60,9 @@ def eval_poses(preds: list[Chem.Mol], refs: list[Chem.Mol], cutoff=2.0) -> Tuple
             raise ValueError("mismatched number of atoms")
 
         # Compute RMSD
-        pred_spy = spyrmsd.Molecule.from_rdkit(pred)
-        ref_spy = spyrmsd.Molecule.from_rdkit(ref)
-        rmsd = spyrmsd.rmsdwrapper(ref_spy, pred_spy, symmetry=True, strip=True)
+        pred_spy = spyrmsd.molecule.Molecule.from_rdkit(pred)
+        ref_spy = spyrmsd.molecule.Molecule.from_rdkit(ref)
+        rmsd = spyrmsd.rmsd.rmsdwrapper(ref_spy, pred_spy, symmetry=True, strip=True)
         rmsds.extend(rmsd)
 
     rmsds = np.asarray(rmsds)
