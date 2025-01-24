@@ -1,11 +1,18 @@
-from rdkit import Chem
-from rdkit.Chem import AllChem
-from spyrmsd.molecule import Molecule
-from spyrmsd.rmsd import rmsdwrapper
-import numpy as np
-from sklearn.metrics import mean_absolute_error, r2_score
-from scipy.stats import kendalltau
+from collections import defaultdict
 from typing import Tuple
+
+import numpy as np
+import spyrmsd
+from rdkit import Chem
+from scipy.stats import kendalltau
+from sklearn.metrics import mean_absolute_error, r2_score
+
+
+def mask_nan(y_true, y_pred):
+    mask = ~np.isnan(y_true)
+    y_true = np.array(y_true)[mask]
+    y_pred = np.array(y_pred)[mask]
+    return y_true, y_pred
 
 
 def mol_has_3D(mol):
@@ -18,9 +25,7 @@ def mol_has_3D(mol):
         raise ValueError("Molecule is not 3D")
 
 
-def eval_poses(
-    preds: list[Chem.Mol], refs: list[Chem.Mol], cutoff=2.0
-) -> Tuple[np.ndarray, float]:
+def eval_poses(preds: list[Chem.Mol], refs: list[Chem.Mol], cutoff=2.0) -> Tuple[np.ndarray, float]:
     """
     Evaluate the poses of the predicted molecules against the reference molecules.
 
@@ -41,19 +46,28 @@ def eval_poses(
         Returns a tuple of the RMSD values and the percentage of RMSD values less than the cutoff
 
     """
+    if spyrmsd is None:
+        raise ImportError(
+            "The ASAP Discovery competititon requires the spyrmsd package to be installed."
+            "Please install it using `pip install spyrmsd`"
+        )
+
     if len(preds) != len(refs):
         raise ValueError("mismatched lengths in preds vs references")
 
     # find symm corrected  heavy atom RMSDs
     rmsds = []
     for pred, ref in zip(preds, refs):
+        # Check the input
         mol_has_3D(pred)
         mol_has_3D(ref)
         if pred.GetNumHeavyAtoms() != ref.GetNumHeavyAtoms():
             raise ValueError("mismatched number of atoms")
-        pred_spy = Molecule.from_rdkit(pred)
-        ref_spy = Molecule.from_rdkit(ref)
-        rmsd = rmsdwrapper(ref_spy, pred_spy, symmetry=True, strip=True)
+
+        # Compute RMSD
+        pred_spy = spyrmsd.Molecule.from_rdkit(pred)
+        ref_spy = spyrmsd.Molecule.from_rdkit(ref)
+        rmsd = spyrmsd.rmsdwrapper(ref_spy, pred_spy, symmetry=True, strip=True)
         rmsds.extend(rmsd)
 
     rmsds = np.asarray(rmsds)
@@ -65,15 +79,18 @@ def eval_poses(
     prob = (correct / rmsds.shape[0]) * 100
 
     collect = {}
-    collect["raw_rmsds"] = rmsds
-    collect["percentage_correct"] = prob
+    collect["rmsd_mean"] = np.mean(rmsds, 0.75)
+    collect["rmsd_min"] = np.min(rmsds, 0.75)
+    collect["rmsd_q1"] = np.quantile(rmsds, 0.25)
+    collect["rmsd_median"] = np.quantile(rmsds, 0.5)
+    collect["rmsd_q3"] = np.quantile(rmsds, 0.75)
+    collect["rmsd_max"] = np.max(rmsds)
+    collect["rmsd_coverage"] = prob
 
     return collect
 
 
-def eval_potency(
-    preds: dict[str, list], refs: dict[str, list]
-) -> Tuple[dict[str, float]]:
+def eval_potency(preds: dict[str, list], refs: dict[str, list]) -> Tuple[dict[str, float]]:
     """
     Eval pIC50 potency performance with MAE (already log10 transformed)
 
@@ -89,38 +106,37 @@ def eval_potency(
     dict[str, float]
         Returns a dictonary of summary statistics
     """
+
     keys = {"pIC50 (SARS-CoV-2 Mpro)", "pIC50 (MERS-CoV Mpro)"}
-    collect = {}
+    collect = defaultdict(dict)
+
     for k in keys:
         if k not in preds.keys() or k not in refs.keys():
             raise ValueError("required key not present")
-        pred = preds[k]
-        ref = refs[k]
+
+        ref, pred = mask_nan(refs[k], preds[k])
+
         mae = mean_absolute_error(ref, pred)
         ktau = kendalltau(ref, pred)
         r2 = r2_score(ref, pred)
 
         # subchallenge statistics
-        collect[k + " MAE"] = mae
-        collect[k + " ktau"] = ktau.statistic
-        collect[k + " R2"] = r2
+        collect[k]["mean_absolute_error"] = mae
+        collect[k]["kendall_tau"] = ktau.statistic
+        collect[k]["r2"] = r2
 
     # compute macro average MAE
-    mae_entries = {k for k in collect.keys() if "MAE" in k}
-    macro_mae = np.mean([collect[k] for k in mae_entries])
-    collect["pIC50_macro_mae_avg"] = macro_mae
+    macro_mae = np.mean([collect[k]["mean_absolute_error"] for k in keys])
+    collect["aggregated"]["macro_mean_absolute_error"] = macro_mae
 
     # compute macro average R2
-    R2_entries = {k for k in collect.keys() if "R2" in k}
-    macro_R2 = np.mean([collect[k] for k in R2_entries])
-    collect["pIC50_macro_R2_avg"] = macro_R2
+    macro_r2 = np.mean([collect[k]["r2"] for k in keys])
+    collect["aggregated"]["macro_r2"] = macro_r2
 
     return collect
 
 
-def eval_admet(
-    preds: dict[str, list], refs: dict[str, list]
-) -> Tuple[dict[str, float], np.ndarray]:
+def eval_admet(preds: dict[str, list], refs: dict[str, list]) -> Tuple[dict[str, float], np.ndarray]:
     """
     Eval ADMET targets with MAE for pre-log10 transformed targets (LogD) and MALE  (MAE on log10 transformed dataset) on non-transformed data
 
@@ -148,13 +164,13 @@ def eval_admet(
     # will be treated as is
     logscale_endpts = {"LogD"}
 
-    collect = {}
+    collect = defaultdict(dict)
+
     for k in keys:
         if k not in preds.keys() or k not in refs.keys():
             raise ValueError("required key not present")
 
-        pred = preds[k]
-        ref = refs[k]
+        ref, pred = mask_nan(refs[k], preds[k])
 
         if k in logscale_endpts:
             # already log10scaled
@@ -174,17 +190,15 @@ def eval_admet(
             mae = mean_absolute_error(ref_log10s, pred_log10s)
             r2 = r2_score(ref_log10s, pred_log10s)
 
-        collect[k + " MAE"] = mae
-        collect[k + " R2"] = r2
+        collect[k]["mean_absolute_error"] = mae
+        collect[k]["r2"] = r2
 
     # compute macro average MAE
-    mae_entries = {k for k in collect.keys() if "MAE" in k}
-    macro_mae = np.mean([collect[k] for k in mae_entries])
-    collect["ADMET_macro_mae_avg"] = macro_mae
+    macro_mae = np.mean([collect[k]["mean_absolute_error"] for k in keys])
+    collect["aggregated"]["macro_mean_absolute_error"] = macro_mae
 
     # compute macro average R2
-    R2_entries = {k for k in collect.keys() if "R2" in k}
-    macro_R2 = np.mean([collect[k] for k in R2_entries])
-    collect["ADMET_macro_R2_avg"] = macro_R2
+    macro_r2 = np.mean([collect[k]["r2"] for k in keys])
+    collect["aggregated"]["macro_r2"] = macro_r2
 
     return collect
