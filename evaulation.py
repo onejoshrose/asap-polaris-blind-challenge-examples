@@ -74,8 +74,8 @@ def eval_poses(preds: list[Chem.Mol], refs: list[Chem.Mol], cutoff=2.0) -> Tuple
     prob = (correct / rmsds.shape[0]) * 100
 
     collect = {}
-    collect["rmsd_mean"] = np.mean(rmsds, 0.75)
-    collect["rmsd_min"] = np.min(rmsds, 0.75)
+    collect["rmsd_mean"] = np.mean(rmsds)
+    collect["rmsd_min"] = np.min(rmsds)
     collect["rmsd_q1"] = np.quantile(rmsds, 0.25)
     collect["rmsd_median"] = np.quantile(rmsds, 0.5)
     collect["rmsd_q3"] = np.quantile(rmsds, 0.75)
