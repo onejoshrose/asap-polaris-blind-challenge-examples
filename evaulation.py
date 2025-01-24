@@ -46,11 +46,6 @@ def eval_poses(preds: list[Chem.Mol], refs: list[Chem.Mol], cutoff=2.0) -> Tuple
         Returns a tuple of the RMSD values and the percentage of RMSD values less than the cutoff
 
     """
-    if spyrmsd is None:
-        raise ImportError(
-            "The ASAP Discovery competititon requires the spyrmsd package to be installed."
-            "Please install it using `pip install spyrmsd`"
-        )
 
     if len(preds) != len(refs):
         raise ValueError("mismatched lengths in preds vs references")
