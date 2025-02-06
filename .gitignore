@@ -9,6 +9,8 @@
 *structures
 *Mpro
 *REFERENCE
+/reference_structures
+/raw_data_package
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -181,7 +183,6 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-reference_structures/__MACOSX/._MERS-CoV-Mpro
-reference_structures/__MACOSX/._SARS-CoV-2-Mpro
-raw_data_package/__MACOSX/ligand-posing/._ALIGNMENT_REFERENCES
-/raw_data_package
+
+
+
